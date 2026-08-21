@@ -514,6 +514,27 @@ def test_connection_pool_with_no_keepalive_connections_allowed():
 
 
 
+def test_connection_pool_closes_idle_connection_for_different_origin():
+    network_backend = httpcore.MockBackend(
+        [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\na",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nb",
+        ]
+    )
+
+    with httpcore.ConnectionPool(
+        network_backend=network_backend, max_connections=1
+    ) as pool:
+        response = pool.request("GET", "https://a.com/")
+        assert response.status == 200
+        assert "https://a.com:443" in repr(pool.connections[0])
+
+        response = pool.request("GET", "https://b.com/")
+        assert response.status == 200
+        assert len(pool.connections) == 1
+        assert "https://b.com:443" in repr(pool.connections[0])
+
+
 def test_connection_pool_concurrency():
     """
     HTTP/1.1 requests made in concurrency must not ever exceed the maximum number

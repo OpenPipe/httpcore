@@ -513,6 +513,28 @@ async def test_connection_pool_with_no_keepalive_connections_allowed():
         assert info == []
 
 
+@pytest.mark.anyio
+async def test_connection_pool_closes_idle_connection_for_different_origin():
+    network_backend = httpcore.AsyncMockBackend(
+        [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\na",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nb",
+        ]
+    )
+
+    async with httpcore.AsyncConnectionPool(
+        network_backend=network_backend, max_connections=1
+    ) as pool:
+        response = await pool.request("GET", "https://a.com/")
+        assert response.status == 200
+        assert "https://a.com:443" in repr(pool.connections[0])
+
+        response = await pool.request("GET", "https://b.com/")
+        assert response.status == 200
+        assert len(pool.connections) == 1
+        assert "https://b.com:443" in repr(pool.connections[0])
+
+
 @pytest.mark.trio
 async def test_connection_pool_concurrency():
     """
