@@ -337,6 +337,8 @@ class AsyncConnectionPool(AsyncRequestInterface):
                 if new_connection_budget > 0:
                     connection = self.create_connection(origin)
                     self._connections.append(connection)
+                    if connection.is_available():
+                        available_connections.append(connection)
                     pool_request.assign_to_connection(connection)
                     new_connection_budget -= 1
                     continue
@@ -347,6 +349,8 @@ class AsyncConnectionPool(AsyncRequestInterface):
                         closing_connections.append(connection)
                         connection = self.create_connection(origin)
                         self._connections.append(connection)
+                        if connection.is_available():
+                            available_connections.append(connection)
                         pool_request.assign_to_connection(connection)
                         break
 
