@@ -1,5 +1,6 @@
 import logging
 import typing
+from unittest.mock import Mock
 
 import hpack
 import hyperframe.frame
@@ -7,7 +8,57 @@ import pytest
 from tests import concurrency
 
 import httpcore
+from httpcore._sync.connection_pool import PoolRequest
 
+
+
+def test_connection_pool_reuses_new_connection_within_assignment_pass():
+    pool = httpcore.ConnectionPool(max_connections=10, http2=True)
+    pool._requests = [
+        PoolRequest(httpcore.Request("GET", "https://example.com/"))
+        for _ in range(10)
+    ]
+
+    pool._assign_requests_to_connections()
+
+    assert len(pool.connections) == 1
+    assert {request.connection for request in pool._requests} == set(pool.connections)
+
+
+def test_connection_pool_does_not_multiplex_new_http11_connections():
+    pool = httpcore.ConnectionPool(max_connections=10)
+    pool._requests = [
+        PoolRequest(httpcore.Request("GET", "https://example.com/"))
+        for _ in range(10)
+    ]
+
+    pool._assign_requests_to_connections()
+
+    assert len(pool.connections) == 10
+    assert len({request.connection for request in pool._requests}) == 10
+
+
+def test_connection_pool_reuses_replacement_within_assignment_pass():
+    pool = httpcore.ConnectionPool(max_connections=1, http2=True)
+    pool._requests = [
+        PoolRequest(httpcore.Request("GET", "https://new.example.com/"))
+        for _ in range(2)
+    ]
+    idle = Mock()
+    idle.is_closed.return_value = False
+    idle.has_expired.return_value = False
+    idle.is_available.return_value = True
+    idle.is_idle.return_value = True
+    idle.can_handle_request.return_value = False
+    pool._connections = [idle]
+    replacement = pool.create_connection(pool._requests[0].request.url.origin)
+    pool.create_connection = Mock(return_value=replacement)
+
+    closing = pool._assign_requests_to_connections()
+
+    assert closing == [idle]
+    assert pool.connections == [replacement]
+    assert {request.connection for request in pool._requests} == {replacement}
 
 
 def test_connection_pool_with_keepalive():
