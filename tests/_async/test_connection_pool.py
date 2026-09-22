@@ -40,7 +40,7 @@ async def test_connection_pool_does_not_multiplex_new_http11_connections():
 
 
 @pytest.mark.anyio
-async def test_connection_pool_reuses_replacement_within_assignment_pass():
+async def test_connection_pool_reuses_replacement_within_assignment_pass(monkeypatch):
     pool = httpcore.AsyncConnectionPool(max_connections=1, http2=True)
     pool._requests = [
         AsyncPoolRequest(httpcore.Request("GET", "https://new.example.com/"))
@@ -54,7 +54,7 @@ async def test_connection_pool_reuses_replacement_within_assignment_pass():
     idle.can_handle_request.return_value = False
     pool._connections = [idle]
     replacement = pool.create_connection(pool._requests[0].request.url.origin)
-    pool.create_connection = Mock(return_value=replacement)
+    monkeypatch.setattr(pool, "create_connection", Mock(return_value=replacement))
 
     closing = pool._assign_requests_to_connections()
 

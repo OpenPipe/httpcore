@@ -217,6 +217,9 @@ class AsyncForwardHTTPConnection(AsyncConnectionInterface):
     def is_available(self) -> bool:
         return self._connection.is_available()
 
+    def _is_multiplexable(self) -> bool:
+        return self._connection._is_multiplexable()
+
     def has_expired(self) -> bool:
         return self._connection.has_expired()
 
@@ -353,6 +356,9 @@ class AsyncTunnelHTTPConnection(AsyncConnectionInterface):
 
     def is_available(self) -> bool:
         return self._connection.is_available()
+
+    def _is_multiplexable(self) -> bool:
+        return self._connection._is_multiplexable()
 
     def has_expired(self) -> bool:
         return self._connection.has_expired()

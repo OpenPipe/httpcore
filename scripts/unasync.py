@@ -5,6 +5,7 @@ import sys
 from pprint import pprint
 
 SUBS = [
+    (r'httpcore\._async', 'httpcore._sync'),
     ('from .._backends.auto import AutoBackend', 'from .._backends.sync import SyncBackend'),
     ('import trio as concurrency', 'from tests import concurrency'),
     ('AsyncIterator', 'Iterator'),

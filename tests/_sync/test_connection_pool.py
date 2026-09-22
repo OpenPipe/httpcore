@@ -25,6 +25,7 @@ def test_connection_pool_reuses_new_connection_within_assignment_pass():
     assert {request.connection for request in pool._requests} == set(pool.connections)
 
 
+
 def test_connection_pool_does_not_multiplex_new_http11_connections():
     pool = httpcore.ConnectionPool(max_connections=10)
     pool._requests = [
@@ -38,7 +39,8 @@ def test_connection_pool_does_not_multiplex_new_http11_connections():
     assert len({request.connection for request in pool._requests}) == 10
 
 
-def test_connection_pool_reuses_replacement_within_assignment_pass():
+
+def test_connection_pool_reuses_replacement_within_assignment_pass(monkeypatch):
     pool = httpcore.ConnectionPool(max_connections=1, http2=True)
     pool._requests = [
         PoolRequest(httpcore.Request("GET", "https://new.example.com/"))
@@ -52,13 +54,14 @@ def test_connection_pool_reuses_replacement_within_assignment_pass():
     idle.can_handle_request.return_value = False
     pool._connections = [idle]
     replacement = pool.create_connection(pool._requests[0].request.url.origin)
-    pool.create_connection = Mock(return_value=replacement)
+    monkeypatch.setattr(pool, "create_connection", Mock(return_value=replacement))
 
     closing = pool._assign_requests_to_connections()
 
     assert closing == [idle]
     assert pool.connections == [replacement]
     assert {request.connection for request in pool._requests} == {replacement}
+
 
 
 def test_connection_pool_with_keepalive():
@@ -584,6 +587,7 @@ def test_connection_pool_closes_idle_connection_for_different_origin():
         assert response.status == 200
         assert len(pool.connections) == 1
         assert "https://b.com:443" in repr(pool.connections[0])
+
 
 
 def test_connection_pool_concurrency():

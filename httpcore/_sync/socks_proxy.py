@@ -317,6 +317,11 @@ class Socks5Connection(ConnectionInterface):
             )
         return self._connection.is_available()
 
+    def _is_multiplexable(self) -> bool:
+        if self._connection is None:
+            return self.is_available()
+        return self._connection._is_multiplexable()
+
     def has_expired(self) -> bool:
         if self._connection is None:  # pragma: nocover
             return self._connect_failed
