@@ -112,6 +112,10 @@ class ConnectionInterface(RequestInterface):
         """
         raise NotImplementedError()  # pragma: nocover
 
+    def _is_multiplexable(self) -> bool:
+        """Whether multiple pool requests may hold an assignment at once."""
+        return False
+
     def has_expired(self) -> bool:
         """
         Return `True` if the connection is in a state where it should be closed.

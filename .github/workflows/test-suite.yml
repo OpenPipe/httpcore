@@ -3,9 +3,9 @@ name: Test Suite
 
 on:
   push:
-    branches: ["master"]
+    branches: ["master", "openpipe/linear-connection-pool-1.0.9"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "openpipe/linear-connection-pool-1.0.9"]
 
 jobs:
   tests:

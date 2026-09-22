@@ -184,6 +184,12 @@ class AsyncHTTPConnection(AsyncConnectionInterface):
             )
         return self._connection.is_available()
 
+    def _is_multiplexable(self) -> bool:
+        if self._connection is None:
+            # Preserve speculative HTTP/2 sharing until the protocol is known.
+            return self.is_available()
+        return self._connection._is_multiplexable()
+
     def has_expired(self) -> bool:
         if self._connection is None:
             return self._connect_failed

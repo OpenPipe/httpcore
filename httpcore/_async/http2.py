@@ -519,6 +519,9 @@ class AsyncHTTP2Connection(AsyncConnectionInterface):
             )
         )
 
+    def _is_multiplexable(self) -> bool:
+        return True
+
     def has_expired(self) -> bool:
         now = time.monotonic()
         return self._expire_at is not None and now > self._expire_at
