@@ -4,6 +4,7 @@ import ssl
 import sys
 import types
 import typing
+from collections import OrderedDict
 
 from .._backends.sync import SyncBackend
 from .._backends.base import SOCKET_OPTION, NetworkBackend
@@ -282,6 +283,7 @@ class ConnectionPool(RequestInterface):
     def _release_request_connection(self, pool_request: PoolRequest) -> None:
         connection = pool_request.connection
         if connection is not None:
+            pool_request.connection = None
             count = self._request_connections[connection] - 1
             if count:
                 self._request_connections[connection] = count
@@ -340,12 +342,12 @@ class ConnectionPool(RequestInterface):
 
         # Snapshot the reusable connections once instead of rebuilding the
         # list for every queued request.
-        available_connections = {
-            id(connection): connection
+        available_connections = OrderedDict(
+            (id(connection), connection)
             for connection in self._connections
             if connection.is_available()
             and (connection not in assigned or connection._is_multiplexable())
-        }
+        )
         new_connection_budget = self._max_connections - len(self._connections)
 
         # Assign queued requests to connections.
@@ -460,12 +462,16 @@ class PoolByteStream:
             raise exc from None
 
     def close(self) -> None:
-        if not self._closed:
+        with self._pool._optional_thread_lock:
+            if self._closed:
+                return
             self._closed = True
+
+        try:
             with ShieldCancellation():
                 if hasattr(self._stream, "close"):
                     self._stream.close()
-
+        finally:
             with self._pool._optional_thread_lock:
                 self._pool._release_request_connection(self._pool_request)
                 self._pool._requests.remove(self._pool_request)

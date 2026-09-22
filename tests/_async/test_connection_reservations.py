@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+import hpack
+import hyperframe.frame
 import pytest
 
 import httpcore
@@ -193,6 +195,9 @@ async def test_existing_http2_connection_remains_shared():
         pool._release_request_connection(owner)
         pool._requests.remove(owner)
         assert pool._request_connections == {connection: 1}
+        # Releasing the same owner again must not consume the other reservation.
+        pool._release_request_connection(owner)
+        assert pool._request_connections == {connection: 1}
         assert pool._assign_requests_to_connections() == []
         pool._release_request_connection(waiting)
         pool._requests.remove(waiting)
@@ -287,3 +292,89 @@ async def test_reserved_connection_survives_state_transition(transition, monkeyp
         assert owner.connection is connection
         assert waiting.connection is None
         assert pool._request_connections == {connection: 1}
+
+
+@pytest.mark.anyio
+async def test_reservation_released_when_response_close_trace_raises():
+    error = RuntimeError("close callback failed")
+
+    async def trace(name: str, info: dict[str, object]) -> None:
+        if name == "http11.response_closed.complete":
+            raise error
+
+    backend = httpcore.AsyncMockBackend([RESPONSE] * 2)
+    async with httpcore.AsyncConnectionPool(
+        max_connections=1, network_backend=backend
+    ) as pool:
+        response = await pool.handle_async_request(
+            httpcore.Request(
+                "GET",
+                "https://example.com/",
+                headers={"Host": "example.com"},
+                extensions={"trace": trace},
+            )
+        )
+        assert response.status == 200 and await response.aread() == b"OK"
+        with pytest.raises(RuntimeError) as caught:
+            await response.aclose()
+        assert caught.value is error
+        assert pool._requests == [] and pool._request_connections == {}
+        assert pool.connections[0].is_idle()
+        await response.aclose()
+        response = await pool.request(
+            "GET", "https://example.com/", extensions={"timeout": {"pool": 0}}
+        )
+        assert response.status == 200 and response.content == b"OK"
+        assert pool._requests == [] and pool._request_connections == {}
+
+
+@pytest.mark.anyio
+async def test_duplicate_http2_response_close_preserves_other_reservation():
+    encoder = hpack.Encoder()
+    buffer = [
+        hyperframe.frame.SettingsFrame(
+            settings={hyperframe.frame.SettingsFrame.MAX_CONCURRENT_STREAMS: 2}
+        ).serialize()
+    ]
+    for stream_id in (1, 3):
+        buffer.extend(
+            [
+                hyperframe.frame.HeadersFrame(
+                    stream_id=stream_id,
+                    data=encoder.encode([(b":status", b"200")]),
+                    flags=["END_HEADERS"],
+                ).serialize(),
+                hyperframe.frame.DataFrame(
+                    stream_id=stream_id, data=b"OK", flags=["END_STREAM"]
+                ).serialize(),
+            ]
+        )
+    backend = httpcore.AsyncMockBackend(buffer, http2=True)
+    async with httpcore.AsyncConnectionPool(
+        max_connections=1,
+        max_keepalive_connections=0,
+        http2=True,
+        network_backend=backend,
+    ) as pool:
+        first = await pool.handle_async_request(
+            httpcore.Request(
+                "GET", "https://example.com/", headers={"Host": "example.com"}
+            )
+        )
+        assert first.status == 200 and await first.aread() == b"OK"
+        second = await pool.handle_async_request(
+            httpcore.Request(
+                "GET", "https://example.com/", headers={"Host": "example.com"}
+            )
+        )
+        (connection,) = pool.connections
+        assert pool._request_connections == {connection: 2}
+        await first.aclose()
+        await first.aclose()
+        assert pool._request_connections == {connection: 1}
+        assert pool.connections == [connection]
+        assert not connection.is_closed()
+        assert second.status == 200 and await second.aread() == b"OK"
+        await second.aclose()
+        assert pool._requests == [] and pool._request_connections == {}
+        assert connection.is_closed() and pool.connections == []
